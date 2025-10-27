@@ -1,0 +1,62 @@
+height=60
+width=80
+
+strategy samaritan #ff0000 {
+  loop x = 0 for i < 100 do let unused = meet in groom
+}
+
+strategy cheater #0000ff {
+  loop x = 0 for i < 100 do let unused = meet in ignore
+}
+
+strategy student #a68b3d {
+  let unused = meet in
+  if groom
+     then loop x = 0 for i < 100 do let unused = meet in groom
+     else loop x = 0 for i < 100 do let unused = meet in ignore
+}
+
+strategy flipflop #00ff00 {
+  loop x = 0 for i < 100 do
+    let unused = meet in
+    if i / 2 * 2 == i then ignore else groom
+}
+
+strategy invalid #ffffff {
+  false
+}
+
+strategy tit-for-tat #abedaf {
+  loop bad = {} for i < 100 do
+    let other = meet
+    in if other elem bad
+       then if ignore then bad without {other}
+                      else bad
+       else if groom then bad union {other}
+                     else bad
+}
+
+strategy grudger #992288 {
+  loop jerks = {} for i < 100 do
+    let other = meet in
+    let outcome = if other elem jerks then ignore else groom
+    in if outcome then jerks else jerks union {other}
+}
+
+strategy cold-grudger #ffffff {
+  loop mem = {} for i < 100 do
+    let other = meet
+    in if {other,2} elem mem then let unused = ignore in mem
+       else if groom
+            then mem
+            else if {other,1} elem mem then {{other,2}} union mem
+                 else {{other,1}} union mem
+}
+
+strategy mirror #00ff9d {
+  loop prev = {} for i < 100 do
+    let other = meet
+    in if {other,true} elem prev
+       then {other,ignore} union (prev without {other,true})
+       else {other,groom} union (prev without {other,false})
+}
