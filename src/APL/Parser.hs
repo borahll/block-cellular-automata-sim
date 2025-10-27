@@ -17,6 +17,7 @@ import Text.Megaparsec
     sepBy,
     some,
     try,
+    (<|>),
   )
 import Text.Megaparsec.Char (space)
 
@@ -39,7 +40,10 @@ keywords =
     "do",
     "meet",
     "ignore",
-    "groom"
+    "groom",
+    "without",
+    "union",
+    "elem"
   ]
 
 lVName :: Parser VName
@@ -73,12 +77,20 @@ pAtom =
   choice
     [ CstInt <$> lInteger,
       CstBool <$> pBool,
+      pSet,
       Var <$> lVName,
       lString "(" *> pExp <* lString ")",
       lKeyword "groom" *> pure Groom,
       lKeyword "ignore" *> pure Ignore,
       lKeyword "meet" *> pure Meet
     ]
+
+pSet :: Parser Exp
+pSet = do
+  lString "{"
+  elems <- pExp `sepBy` lString ","
+  lString "}"
+  pure $ Set elems
 
 pFExp :: Parser Exp
 pFExp = chain =<< pAtom
@@ -156,18 +168,47 @@ pExp1 = pExp2 >>= chain
             chain $ Sub x y,
           pure x
         ]
+--union and without will be right associative
+pUnionWithout :: Parser Exp
+pUnionWithout = pExp1 >>= chain
+  where
+    chain x =
+      choice
+        [ do
+            f <- (Union <$ lKeyword "union") <|> (Without <$ lKeyword "without")
+            y <- pUnionWithout
+            chain $ f x y
+          ,pure x
+        ]
 
-pExp :: Parser Exp
-pExp = pExp1 >>= chain
+
+pElem :: Parser Exp
+pElem = pUnionWithout >>= chain
+  where
+    chain x =
+      choice
+        [ do
+            lKeyword "elem"
+            y <- pUnionWithout
+            chain $ Elem x y,
+          pure x
+        ]
+
+pEq :: Parser Exp
+pEq = pElem >>= chain
   where
     chain x =
       choice
         [ do
             lString "=="
-            y <- pExp1
+            y <- pElem
             chain $ Eql x y,
           pure x
         ]
+
+
+pExp :: Parser Exp
+pExp = pEq
 
 parseAPL :: FilePath -> String -> Either String Exp
 parseAPL fname s = case parse (space *> pExp <* eof) fname s of

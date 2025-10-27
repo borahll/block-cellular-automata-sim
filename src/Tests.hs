@@ -161,7 +161,6 @@ taskAtests =
           Pure v           -> assertFailure $ "Expected ValSet [1,2], got: " ++ show v
           _                -> assertFailure "Expected pure value for set literal"
 
-      -- --- union ---
     , testCase "Union: {1,2} union {3}" $
         let e = Union (Set [CstInt 1, CstInt 2]) (Set [CstInt 3])
         in case eval mempty e of
@@ -181,7 +180,6 @@ taskAtests =
              Pure _ -> assertFailure "Expected failure for union with non-set right operand"
              _      -> pure ()
 
-      -- --- without ---
     , testCase "Without: {1,2,3} without {2,4} = {1,3}" $
         let e = Without (Set [CstInt 1, CstInt 2, CstInt 3]) (Set [CstInt 2, CstInt 4])
         in case eval mempty e of
@@ -201,7 +199,6 @@ taskAtests =
              Pure _ -> assertFailure "Expected failure for without with non-set right operand"
              _      -> pure ()
 
-      -- --- elem ---
     , testCase "Elem: 2 elem {1,2,3} = true" $
         let e = Elem (CstInt 2) (Set [CstInt 1, CstInt 2, CstInt 3])
         in case eval mempty e of
@@ -222,7 +219,6 @@ taskAtests =
              Pure _ -> assertFailure "Expected failure for elem with non-set RHS"
              _      -> pure ()
 
-      -- --- nested sets & non-int values ---
     , testCase "Nested sets: { {1}, {2} } union { {3} }" $
         let s12 = Set [Set [CstInt 1], Set [CstInt 2]]
             s3  = Set [Set [CstInt 3]]
@@ -244,7 +240,6 @@ taskAtests =
              Pure v           -> assertFailure $ "Expected ValBool True, got: " ++ show v
              _                -> assertFailure "Expected pure value for elem with bools"
 
-      -- --- element evaluation / error propagation ---
     , testCase "Set element evaluation fails on error (first element fails)" $
         let bad = Div (CstInt 1) (CstInt 0)
             e   = Set [bad, CstInt 2]
@@ -264,7 +259,39 @@ taskBtests :: TestTree
 taskBtests =
   testGroup
     "Task B"
-    []
+    [
+      parserTest "{}" (Set [])
+    , parserTest "{1}" (Set [CstInt 1])
+    , parserTest "{1, 2, 3}" (Set [CstInt 1, CstInt 2, CstInt 3])
+
+    , parserTest "a elem {1}"
+        (Elem (Var "a") (Set [CstInt 1]))
+    , parserTest "a elem S elem T"
+        (Elem (Elem (Var "a") (Var "S")) (Var "T"))
+
+    , parserTest "a union b union c"
+        (Union (Var "a") (Union (Var "b") (Var "c")))
+    , parserTest "S without T without U"
+        (Without (Var "S") (Without (Var "T") (Var "U")))
+
+
+    , parserTest "x elem {1} union {2}"
+        (Elem (Var "x") (Union (Set [CstInt 1]) (Set [CstInt 2])))
+      , parserTest "a elem S without T union U"
+        (Elem (Var "a") (Without (Var "S") (Union (Var "T") (Var "U"))))
+
+    , parserTest "1 + 2 elem {3}"
+      (Elem (Add (CstInt 1) (CstInt 2)) (Set [CstInt 3]))
+    , parserTest "(a union b) elem S"
+        (Elem (Union (Var "a") (Var "b")) (Var "S"))
+
+    , parserTest "let u = meet in groom"
+        (Let "u" Meet Groom)
+
+    , parserTestFail "{1,}"
+    , parserTestFail "{ , 1 }"
+    , parserTestFail "elem {1} 2"
+    ]
 
 taskCtests :: TestTree
 taskCtests =
