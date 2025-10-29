@@ -23,15 +23,6 @@ parserTest s e =
       Left err -> assertFailure err
       Right e' -> e' @?= e
 
-intRule :: Rules Int Int
-intRule =
-  Rules
-    { rulesInitial  = \(i,j) -> (i*31 + j*17) `mod` 97
-    , rulesInteract = \(a,b) -> ( (a + b) `mod` 97
-                                , (a*3 + b*5) `mod` 97 )
-    , rulesObserve  = id
-    }
-
 runSequential :: Rules s o -> Int -> Int -> Int -> [[o]]
 runSequential rules h w steps =
   let g0 = Simulation.initialGrid rules h w
@@ -335,7 +326,99 @@ taskDtests :: TestTree
 taskDtests =
   testGroup
     "Task D"
-    []
+    [
+      testCase "meet: samaritan vs cheater => both legal (both Just)" $ do
+        let params = Galapagos.defaultParams
+        let (ra, rb) = Galapagos.meet params (samaritan, cheater)
+        case (ra, rb) of
+          (Just _, Just _) -> pure ()
+          other            -> assertFailure $ "Expected (Just,Just), got: " ++ showPair other
+
+    , testCase "meet: cheater vs samaritan => both legal (both Just)" $ do
+        let params = Galapagos.defaultParams
+        let (ra, rb) = Galapagos.meet params (cheater, samaritan)
+        case (ra, rb) of
+          (Just _, Just _) -> pure ()
+          other            -> assertFailure $ "Expected (Just,Just), got: " ++ showPair other
+
+    , testCase "meet: invalid (illegal) vs samaritan => (Nothing, Just originalSamaritan)" $ do
+        let params = Galapagos.defaultParams
+            s0     = samaritan
+            (ra, rb) = Galapagos.meet params (invalid, s0)
+        case (ra, rb) of
+          (Nothing, Just s1) -> do
+            Galapagos.finchHP s1          @?= Galapagos.finchHP s0
+            Galapagos.finchRoundsLeft s1  @?= Galapagos.finchRoundsLeft s0
+            Galapagos.finchColour s1      @?= Galapagos.finchColour s0
+          other -> assertFailure $ "Expected (Nothing, Just...), got: " ++ showPair other
+
+    , testCase "meet: samaritan vs invalid (illegal) => (Just originalSamaritan, Nothing)" $ do
+        let params = Galapagos.defaultParams
+            s0     = samaritan
+            (ra, rb) = Galapagos.meet params (s0, invalid)
+        case (ra, rb) of
+          (Just s1, Nothing) -> do
+            Galapagos.finchHP s1          @?= Galapagos.finchHP s0
+            Galapagos.finchRoundsLeft s1  @?= Galapagos.finchRoundsLeft s0
+            Galapagos.finchColour s1      @?= Galapagos.finchColour s0
+          other -> assertFailure $ "Expected (Just..., Nothing), got: " ++ showPair other
+    , testCase "meet: invalid vs invalid => (Nothing, Nothing)" $ do
+        let params = Galapagos.defaultParams
+            (ra, rb) = Galapagos.meet params (invalid, invalid)
+        case (ra, rb) of
+          (Nothing, Nothing) -> pure ()
+          other              -> assertFailure $ "Expected (Nothing,Nothing), got: " ++ showPair other
+    , testCase "meet: samaritan vs samaritan => both Just and HPs not unchanged simultaneously" $ do
+        let params = Galapagos.defaultParams
+            a0 = samaritan; b0 = samaritan { Galapagos.finchID = 1 }
+            (ra, rb) = Galapagos.meet params (a0, b0)
+        case (ra, rb) of
+          (Just a1, Just b1) -> do
+            let sameA = Galapagos.finchHP a1 == Galapagos.finchHP a0
+                sameB = Galapagos.finchHP b1 == Galapagos.finchHP b0
+            assertBool "Expected some HP change on GG" (not (sameA && sameB))
+          other -> assertFailure $ "Expected (Just,Just), got: " ++ showPair other
+
+    , testCase "meet: cheater vs cheater => both Just and at least one HP changed" $ do
+        let params = Galapagos.defaultParams
+            a0 = cheater; b0 = cheater { Galapagos.finchID = 2 }
+            (ra, rb) = Galapagos.meet params (a0, b0)
+        case (ra, rb) of
+          (Just a1, Just b1) -> do
+            let sameA = Galapagos.finchHP a1 == Galapagos.finchHP a0
+                sameB = Galapagos.finchHP b1 == Galapagos.finchHP b0
+            assertBool "Expected some HP change on II" (not (sameA && sameB))
+          other -> assertFailure $ "Expected (Just,Just), got: " ++ showPair other
+
+    , testCase "meet: samaritan vs cheater => asymmetric HP effects (qualitative)" $ do
+        let params = Galapagos.defaultParams
+            a0 = samaritan; b0 = cheater
+            (ra, rb) = Galapagos.meet params (a0, b0)
+        case (ra, rb) of
+          (Just a1, Just b1) -> do
+            let da = Galapagos.finchHP a1 - Galapagos.finchHP a0
+                db = Galapagos.finchHP b1 - Galapagos.finchHP b0
+            assertBool "Expected asymmetric HP deltas for GI" (da /= db)
+          other -> assertFailure $ "Expected (Just,Just), got: " ++ showPair other
+
+    , testCase "strategy progression: flipflop vs cheater twice changes flipflop HP between meets" $ do
+        let params = Galapagos.defaultParams
+            f0 = flipflop; c0 = cheater { Galapagos.finchID = 42 }
+            (rf1, rc1) = Galapagos.meet params (f0, c0)
+        case (rf1, rc1) of
+          (Just f1, Just c1) -> do
+            let (rf2, rc2) = Galapagos.meet params (f1, c1)
+            case (rf2, rc2) of
+              (Just f2, Just _) ->
+                assertBool "flipflop HP should differ between meet1 and meet2"
+                  (Galapagos.finchHP f1 /= Galapagos.finchHP f2)
+              other -> assertFailure $ "2nd meet expected (Just,Just), got: " ++ showPair other
+          other -> assertFailure $ "1st meet expected (Just,Just), got: " ++ showPair other
+    ]
+  where
+    showPair (ma, mb) = "(" ++ maybe "Nothing" (const "Just _") ma
+                         ++ "," ++ maybe "Nothing" (const "Just _") mb ++ ")"
+
 
 taskEtests :: TestTree
 taskEtests =

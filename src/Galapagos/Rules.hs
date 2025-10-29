@@ -122,7 +122,30 @@ meet :: Params -> (Finch, Finch) -> (Maybe Finch, Maybe Finch)
 -- A pair of finches meet and decide whether to groom or ignore each other.
 -- Returns the updated finches after applying the payoffs based on their decisions.
 -- """
-meet = undefined
+meet ps (a, b) =
+  case (step a b, step b a) of
+    (Right (ag, ka), Right (bg, kb)) ->
+      let (da, db) = payoff ps ag bg
+          cap x    = min (maxHP ps) x
+          a' = a { finchHP = cap (finchHP a + da)
+                 , finchStrategy = ka bg }
+          b' = b { finchHP = cap (finchHP b + db)
+                 , finchStrategy = kb ag }
+       in (Just a', Just b')
+    (Left (), Right _)  -> (Nothing, Just b)
+    (Right _, Left ())  -> (Just a, Nothing)
+    (Left (), Left ())  -> (Nothing, Nothing)
+  where
+    step self other =
+      case finchStrategy self of
+        Free (MeetOp k) ->
+          case k (finchID other) of
+            Free (GroomOp k2)  -> Right (True,  k2)
+            Free (IgnoreOp k2) -> Right (False, k2)
+            _                  -> Left ()
+        _ -> Left ()
+
+    
 
 groom :: Params -> (CellState, CellState) -> (CellState, CellState)
 -- """
