@@ -23,6 +23,24 @@ parserTest s e =
       Left err -> assertFailure err
       Right e' -> e' @?= e
 
+-- A deterministic integer rule that's a bit "livelier" than smoothen.
+intRule :: Rules Int Int
+intRule =
+  Rules
+    { rulesInitial  = \(i,j) -> (i*31 + j*17) `mod` 97
+    , rulesInteract = \(a,b) -> ( (a + b) `mod` 97
+                                , (a*3 + b*5) `mod` 97 )
+    , rulesObserve  = id
+    }
+
+-- Sequential runner for comparison (kept local to Task C tests)
+runSequential :: Rules s o -> Int -> Int -> Int -> [[o]]
+runSequential rules h w steps =
+  let g0 = Simulation.initialGrid rules h w
+      gN = iterate (Simulation.stepGrid rules) g0 !! steps
+  in  Simulation.observeGrid rules gN
+
+
 parserTestFail :: String -> TestTree
 parserTestFail s =
   testCase s $
@@ -297,9 +315,61 @@ taskCtests :: TestTree
 taskCtests =
   testGroup
     "Task C"
-    [ testCase "Smoothen(0)" $ testEquivalence smoothen 0,
-      testCase "Smoothen(1)" $ testEquivalence smoothen 1,
-      testCase "Smoothen(2)" $ testEquivalence smoothen 2
+    [ 
+            -- Basic smoothen parity (0/1/2 already good)
+      testCase "Smoothen: steps=0, 4x4" $ testEquivalence smoothen 0,
+      testCase "Smoothen: steps=1, 4x4" $ testEquivalence smoothen 1,
+      testCase "Smoothen: steps=2, 4x4" $ testEquivalence smoothen 2,
+
+      -- More steps to exercise Margolus shift over time
+      testCase "Smoothen: steps=5, 4x4" $ testEquivalence smoothen 5,
+      testCase "Smoothen: steps=10, 4x4" $ testEquivalence smoothen 10,
+
+      -- Rectangular grids (torus wrap + pairing schedule)
+      testCase "Smoothen: steps=7, 5x6 rectangular" $ do
+        let h = 5; w = 6; steps = 7
+        let simulated = runSequential smoothen h w steps
+        s <- startAutomaton smoothen h w
+        replicateM_ steps $ stepAutomaton s
+        real <- observeAutomaton s
+        real @?= simulated,
+
+      -- A different (integer) rule to catch corner cases
+      testCase "intRule: steps=0, 3x4" $ do
+        let h = 3; w = 4; steps = 0
+        let simulated = runSequential intRule h w steps
+        s <- startAutomaton intRule h w
+        replicateM_ steps $ stepAutomaton s
+        real <- observeAutomaton s
+        real @?= simulated,
+
+      testCase "intRule: steps=6, 3x4" $ do
+        let h = 3; w = 4; steps = 6
+        let simulated = runSequential intRule h w steps
+        s <- startAutomaton intRule h w
+        replicateM_ steps $ stepAutomaton s
+        real <- observeAutomaton s
+        real @?= simulated,
+
+      testCase "intRule: steps=9, 6x5" $ do
+        let h = 6; w = 5; steps = 9
+        let simulated = runSequential intRule h w steps
+        s <- startAutomaton intRule h w
+        replicateM_ steps $ stepAutomaton s
+        real <- observeAutomaton s
+        real @?= simulated,
+
+      -- QuickCheck: random small grids and steps, server ≡ simulator
+      testProperty "Server ≡ Simulator (random small grids, steps ≤ 8)" $
+        forAll (choose (1,6)) $ \h ->
+        forAll (choose (1,6)) $ \w ->
+        forAll (choose (0,8)) $ \steps ->
+          ioProperty $ do
+            let simulated = runSequential intRule h w steps
+            s <- startAutomaton intRule h w
+            replicateM_ steps $ stepAutomaton s
+            real <- observeAutomaton s
+            pure (real == simulated)
     ]
 
 taskDtests :: TestTree
