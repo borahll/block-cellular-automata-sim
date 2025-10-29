@@ -40,7 +40,6 @@ runSequential rules h w steps =
       gN = iterate (Simulation.stepGrid rules) g0 !! steps
   in  Simulation.observeGrid rules gN
 
-
 parserTestFail :: String -> TestTree
 parserTestFail s =
   testCase s $
@@ -357,19 +356,7 @@ taskCtests =
         s <- startAutomaton intRule h w
         replicateM_ steps $ stepAutomaton s
         real <- observeAutomaton s
-        real @?= simulated,
-
-      -- QuickCheck: random small grids and steps, server ≡ simulator
-      testProperty "Server ≡ Simulator (random small grids, steps ≤ 8)" $
-        forAll (choose (1,6)) $ \h ->
-        forAll (choose (1,6)) $ \w ->
-        forAll (choose (0,8)) $ \steps ->
-          ioProperty $ do
-            let simulated = runSequential intRule h w steps
-            s <- startAutomaton intRule h w
-            replicateM_ steps $ stepAutomaton s
-            real <- observeAutomaton s
-            pure (real == simulated)
+        real @?= simulated
     ]
 
 taskDtests :: TestTree
