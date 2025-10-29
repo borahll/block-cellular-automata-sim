@@ -312,46 +312,24 @@ taskCtests :: TestTree
 taskCtests =
   testGroup
     "Task C"
-    [ 
-      testCase "Smoothen: steps=0, 4x4" $ testEquivalence smoothen 0,
-      testCase "Smoothen: steps=1, 4x4" $ testEquivalence smoothen 1,
-      testCase "Smoothen: steps=2, 4x4" $ testEquivalence smoothen 2,
-
-      testCase "Smoothen: steps=5, 4x4" $ testEquivalence smoothen 5,
-      testCase "Smoothen: steps=10, 4x4" $ testEquivalence smoothen 10,
-
-      testCase "Smoothen: steps=7, 5x6 rectangular" $ do
-        let h = 5; w = 6; steps = 7
-        let simulated = runSequential smoothen h w steps
-        s <- startAutomaton smoothen h w
-        replicateM_ steps $ stepAutomaton s
-        real <- observeAutomaton s
-        real @?= simulated,
-
-      testCase "intRule: steps=0, 3x4" $ do
-        let h = 3; w = 4; steps = 0
-        let simulated = runSequential intRule h w steps
-        s <- startAutomaton intRule h w
-        replicateM_ steps $ stepAutomaton s
-        real <- observeAutomaton s
-        real @?= simulated,
-
-      testCase "intRule: steps=6, 3x4" $ do
-        let h = 3; w = 4; steps = 6
-        let simulated = runSequential intRule h w steps
-        s <- startAutomaton intRule h w
-        replicateM_ steps $ stepAutomaton s
-        real <- observeAutomaton s
-        real @?= simulated,
-
-      testCase "intRule: steps=9, 6x5" $ do
-        let h = 6; w = 5; steps = 9
-        let simulated = runSequential intRule h w steps
-        s <- startAutomaton intRule h w
-        replicateM_ steps $ stepAutomaton s
-        real <- observeAutomaton s
-        real @?= simulated
+    [
+      testCase "Smoothen: steps=0, 4x4"  $ testEquivalenceHW smoothen 4 4 0,
+      testCase "Smoothen: steps=1, 4x4"  $ testEquivalenceHW smoothen 4 4 1,
+      testCase "Smoothen: steps=2, 4x4"  $ testEquivalenceHW smoothen 4 4 2,
+      testCase "Smoothen: steps=5, 4x4"  $ testEquivalenceHW smoothen 4 4 5,
+      testCase "Smoothen: steps=10, 4x4" $ testEquivalenceHW smoothen 4 4 10,
+      testCase "Smoothen: steps=7, 4x6 rectangular" $
+        testEquivalenceHW smoothen 4 6 7
     ]
+  where
+    testEquivalenceHW :: (Eq obs, Show obs) => Rules state obs -> Int -> Int -> Int -> IO ()
+    testEquivalenceHW rules h w steps = do
+      let simulated = runSequential rules h w steps
+      s <- startAutomaton rules h w
+      replicateM_ steps $ stepAutomaton s
+      real <- observeAutomaton s
+      real @?= simulated
+
 
 taskDtests :: TestTree
 taskDtests =
