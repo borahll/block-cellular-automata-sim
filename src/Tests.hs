@@ -423,8 +423,182 @@ taskDtests =
 taskEtests :: TestTree
 taskEtests =
   testGroup
-    "Task E"
-    []
+    "Task E (Config parser with new grammar)"
+    [
+      let h = 6; w = 8
+          cfg = defaultConfig { Galapagos.cfgHeight = h
+                              , Galapagos.cfgWidth  = w
+                              , Galapagos.cfgParams = Galapagos.defaultParams
+                              , Galapagos.cfgStrategies = []
+                              }
+          src = "height = 6 width = 8\n"
+      in galapagosParserTest src cfg,
+      let h = 12; w = 10
+          cfg = defaultConfig { Galapagos.cfgHeight = h
+                              , Galapagos.cfgWidth  = w
+                              , Galapagos.cfgParams = Galapagos.defaultParams
+                              , Galapagos.cfgStrategies = []
+                              }
+          src = "width = 10 height = 12\n"
+      in galapagosParserTest src cfg,
+      let p  = Galapagos.defaultParams { Galapagos.startHP = 37 }
+          cfg = defaultConfig { Galapagos.cfgHeight = 10
+                              , Galapagos.cfgWidth  = 10
+                              , Galapagos.cfgParams = p
+                              , Galapagos.cfgStrategies = []
+                              }
+          src = unlines
+            [ "height = 10 width = 10"
+            , "startHP = 37"
+            ]
+      in galapagosParserTest src cfg,
+      let p = Galapagos.defaultParams
+               { Galapagos.startHP               = 15
+               , Galapagos.invReproductionChance = 7
+               , Galapagos.maxHP                 = 50
+               , Galapagos.lifespan              = 99
+               , Galapagos.invDensity            = 4
+               , Galapagos.payoffs               = (1,2,3,4)
+               }
+          cfg = defaultConfig { Galapagos.cfgHeight = 14
+                              , Galapagos.cfgWidth  = 16
+                              , Galapagos.cfgParams = p
+                              , Galapagos.cfgStrategies = []
+                              }
+          src = unlines
+            [ "height = 14 width = 16"
+            , "startHP = 15"
+            , "invReproductionChance = 7"
+            , "maxHP = 50"
+            , "lifespan = 99"
+            , "invDensity = 4"
+            , "payoffs = (1, 2, 3, 4)"
+            ]
+      in galapagosParserTest src cfg,
+
+      let p = Galapagos.defaultParams { Galapagos.startHP = 9 }
+          cfg = defaultConfig { Galapagos.cfgHeight = 8
+                              , Galapagos.cfgWidth  = 8
+                              , Galapagos.cfgParams = p
+                              , Galapagos.cfgStrategies = []
+                              }
+          src = unlines
+            [ "height = 8 width = 8"
+            , "startHP = 3"
+            , "startHP = 9"
+            ]
+      in galapagosParserTest src cfg,
+
+      let cfg = defaultConfig { Galapagos.cfgHeight = 10
+                              , Galapagos.cfgWidth  = 10
+                              , Galapagos.cfgParams = Galapagos.defaultParams
+                              , Galapagos.cfgStrategies =
+                                  [ ( "samaritan"
+                                    , Galapagos.finchColour samaritan
+                                    , Galapagos.finchStrategyExp samaritan
+                                    )
+                                  ]
+                              }
+          src = unlines
+            [ "height = 10 width = 10"
+            , "strategy samaritan #ff0000 {"
+            , "  loop x = 0 for i < 100 do let unused = meet in groom"
+            , "}"
+            ]
+      in galapagosParserTest src cfg,
+
+      let strat1 = ( "flip-flop.v2"
+                   , Galapagos.RGB 0x12 0x34 0x56
+                   , Galapagos.finchStrategyExp flipflop
+                   )
+          strat2 = ( "cheater_beta"
+                   , Galapagos.RGB 0xAA 0xBB 0xCC
+                   , Galapagos.finchStrategyExp cheater
+                   )
+          cfg = defaultConfig { Galapagos.cfgHeight = 6
+                              , Galapagos.cfgWidth  = 6
+                              , Galapagos.cfgParams = Galapagos.defaultParams
+                              , Galapagos.cfgStrategies = [strat1, strat2]
+                              }
+          src = unlines
+            [ "width = 6 height = 6"
+            , "strategy flip-flop.v2 #123456 {"
+            , "  loop x = 0 for i < 100 do"
+            , "  let unused = meet in"
+            , "  if i / 2 * 2 == i then ignore else groom"
+            , "}"
+            , "strategy cheater_beta #AaBbCc {"
+            , "  loop x = 0 for i < 100 do let unused = meet in ignore"
+            , "}"
+            ]
+      in galapagosParserTest src cfg,
+
+      let p = Galapagos.defaultParams { Galapagos.invDensity = 11 }
+          cfg = defaultConfig { Galapagos.cfgHeight = 4
+                              , Galapagos.cfgWidth  = 4
+                              , Galapagos.cfgParams = p
+                              , Galapagos.cfgStrategies =
+                                  [ ( "cheater"
+                                    , Galapagos.finchColour cheater
+                                    , Galapagos.finchStrategyExp cheater
+                                    )
+                                  , ( "samaritan"
+                                    , Galapagos.finchColour samaritan
+                                    , Galapagos.finchStrategyExp samaritan
+                                    )
+                                  ]
+                              }
+          src = unlines
+            [ "height = 4 width = 4"
+            , "invDensity = 11"
+            , "strategy cheater #0000ff { loop x = 0 for i < 100 do let unused = meet in ignore }"
+            , "strategy samaritan #ff0000 { loop x = 0 for i < 100 do let unused = meet in groom }"
+            ]
+      in galapagosParserTest src cfg,
+
+      let p = Galapagos.defaultParams { Galapagos.payoffs = (10,20,30,40) }
+          cfg = defaultConfig { Galapagos.cfgHeight = 2
+                              , Galapagos.cfgWidth  = 2
+                              , Galapagos.cfgParams = p
+                              , Galapagos.cfgStrategies = []
+                              }
+          src = "height = 2 width = 2\npayoffs = (10,20,30,40)\n"
+      in galapagosParserTest src cfg,
+      galapagosParserTestFail "height 10 width = 8",
+
+      galapagosParserTestFail (unlines
+        [ "height = 6 width = 6"
+        , "hpStart = 10"
+        ]),
+
+      galapagosParserTestFail (unlines
+        [ "width = 8 height = 8"
+        , "payoffs = (1,2,3)"
+        ]),
+
+      galapagosParserTestFail (unlines
+        [ "height = 6 width = 6"
+        , "strategy badcolor #12zz9a { true }"
+        ]),
+
+      galapagosParserTestFail (unlines
+        [ "height = 4 width = 4"
+        , "strategy x #000000 true"
+        ]),
+
+      galapagosParserTestFail "height = 5",
+
+      galapagosParserTestFail (unlines
+        [ "height = 2 width = 2"
+        , "payoffs = (1,,2,3,4)"
+        ]),
+      galapagosParserTestFail (unlines
+        [ "height = 6 width = 6"
+        , "strategy bad name #000000 { true }"
+        ])
+    ]
+
+
 
 taskFtests :: TestTree
 taskFtests =
