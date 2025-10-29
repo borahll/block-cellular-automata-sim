@@ -23,7 +23,6 @@ parserTest s e =
       Left err -> assertFailure err
       Right e' -> e' @?= e
 
--- A deterministic integer rule that's a bit "livelier" than smoothen.
 intRule :: Rules Int Int
 intRule =
   Rules
@@ -33,7 +32,6 @@ intRule =
     , rulesObserve  = id
     }
 
--- Sequential runner for comparison (kept local to Task C tests)
 runSequential :: Rules s o -> Int -> Int -> Int -> [[o]]
 runSequential rules h w steps =
   let g0 = Simulation.initialGrid rules h w
@@ -294,7 +292,7 @@ taskBtests =
 
     , parserTest "x elem {1} union {2}"
         (Elem (Var "x") (Union (Set [CstInt 1]) (Set [CstInt 2])))
-      , parserTest "a elem S without T union U"
+    , parserTest "a elem S without T union U"
         (Elem (Var "a") (Without (Var "S") (Union (Var "T") (Var "U"))))
 
     , parserTest "1 + 2 elem {3}"
@@ -315,16 +313,13 @@ taskCtests =
   testGroup
     "Task C"
     [ 
-            -- Basic smoothen parity (0/1/2 already good)
       testCase "Smoothen: steps=0, 4x4" $ testEquivalence smoothen 0,
       testCase "Smoothen: steps=1, 4x4" $ testEquivalence smoothen 1,
       testCase "Smoothen: steps=2, 4x4" $ testEquivalence smoothen 2,
 
-      -- More steps to exercise Margolus shift over time
       testCase "Smoothen: steps=5, 4x4" $ testEquivalence smoothen 5,
       testCase "Smoothen: steps=10, 4x4" $ testEquivalence smoothen 10,
 
-      -- Rectangular grids (torus wrap + pairing schedule)
       testCase "Smoothen: steps=7, 5x6 rectangular" $ do
         let h = 5; w = 6; steps = 7
         let simulated = runSequential smoothen h w steps
@@ -333,7 +328,6 @@ taskCtests =
         real <- observeAutomaton s
         real @?= simulated,
 
-      -- A different (integer) rule to catch corner cases
       testCase "intRule: steps=0, 3x4" $ do
         let h = 3; w = 4; steps = 0
         let simulated = runSequential intRule h w steps

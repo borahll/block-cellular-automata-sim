@@ -15,8 +15,7 @@ import GenServer
   , requestReply, reply
   )
 
--- Public API
-newtype Automaton obs = Automaton (Server (AutomatonMsg obs))
+data Automaton obs = Automaton (Server (AutomatonMsg obs))
 data AutomatonMsg obs = MsgStep | MsgObserve (ReplyChan [[obs]])
 
 stepAutomaton :: Automaton obs -> IO ()
@@ -53,7 +52,6 @@ startAutomaton rules h w = do
   let st = AutoState rules h w tVar supG acks srefs
   Automaton <$> spawn (serverLoop st)
 
--- Internal types/utilities
 type H = Int; type W = Int; type Coord = (Int,Int)
 wrap h w (i,j) = ((i+h) `mod` h, (j+w) `mod` w)
 north h w (i,j) = wrap h w (i-1,j); south h w (i,j) = wrap h w (i+1,j)
@@ -78,7 +76,6 @@ data AutoState s o = AutoState
   , aStates :: [[CellState s]]
   }
 
--- Cell thread: two-phase handshake + per-step pos shift
 cellThread
   :: Rules s o -> H -> W -> Coord
   -> (Coord -> CellCh s) -> CellCh s -> IORef s -> IORef MargolusPos
@@ -126,7 +123,6 @@ cellThread rules h w (i,j) chOf myCh sRef posRef acks = forever $ do
           writeIORef posRef (margolusShift pos)
           writeChan acks Ack
 
--- Server: even×even concurrent; otherwise exact sequential fallback
 serverLoop :: AutoState s o -> Chan (AutomatonMsg o) -> IO ()
 serverLoop st inbox = forever $ do
   msg <- receive inbox
@@ -148,14 +144,13 @@ serverLoop st inbox = forever $ do
       rows <- mapM (mapM readIORef) (aStates st)
       reply rc (map (map (rulesObserve (aRules st))) rows)
 
--- Odd/degenerate fallback: derive pos at step t, then apply step to IORefs
 doMargolusStepIO :: Rules s o -> Int -> Int -> [[IORef s]] -> Int -> IO ()
 doMargolusStepIO rules h w srefs t = do
   let pos0 = buildGrid h w (\i j -> margolusInitial (i,j))
       posT = iterate (stepPosOnly h w) pos0 !! t
   void (stepStatesFromPos h w rules srefs posT)
 
--- Positions-only step: reverse row-major sweep, then per-cell shift
+
 stepPosOnly :: Int -> Int -> [[MargolusPos]] -> [[MargolusPos]]
 stepPosOnly h w pos =
   map (map margolusShift) (sweepPosReverse h w pos (h-1) (w-1))
@@ -175,7 +170,7 @@ setBlockPos h w pos i j =
       iSE = iS;    jSE = jE
   in set2D (set2D (set2D (set2D pos i j   UL) iE  jE  UR) iS  jS  LL) iSE jSE LR
 
--- Apply real step to states following given pos grid (reverse row-major)
+
 stepStatesFromPos
   :: Int -> Int -> Rules s o -> [[IORef s]] -> [[MargolusPos]] -> IO [[MargolusPos]]
 stepStatesFromPos h w rules srefs pos =
@@ -212,7 +207,7 @@ processBlockIO h w rules srefs pos i j = do
   writeIORef (r iSE jSE) lr2
   pure (setBlockPos h w pos i j)
 
--- Small helpers
+
 broadcast :: SupMsg -> [[Chan SupMsg]] -> IO ()
 broadcast m = mapM_ (mapM_ (`writeChan` m))
 
