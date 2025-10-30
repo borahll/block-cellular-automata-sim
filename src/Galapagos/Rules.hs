@@ -24,7 +24,7 @@ where
 
 import APL.AST (Exp)
 import APL.Eval
-import APL.Monad (EvalM, EvalOp (..), FinchID, Free (..))
+import APL.Monad (EvalM, EvalOp (..), Free (..))
 import BlockAutomaton.Rules
 import System.Random (StdGen, mkStdGen, uniform, uniformR)
 import Prelude hiding (interact)
@@ -122,7 +122,7 @@ createFinch params fid colour stratExp =
     }
 
 createStrategy :: Exp -> Strategy
-createStrategy exp = fmap (const ()) (eval envEmpty exp)
+createStrategy exP = fmap (const ()) (eval envEmpty exP)
 
 -- The first 'Int' is the 's' parameter for seeding the RNG.
 initial :: Int -> Config -> (Int, Int) -> CellState
@@ -157,7 +157,7 @@ reproduce params (a,b) =
          else let (fid,g'') = uniform g'
                   child = createFinch params fid (finchColour f) (finchStrategyExp f)
               in (a, b { cellRNG = g'', cellFinch = Just child })
-    (Nothing, Just f) ->
+    (Nothing, Just _) ->
       let (b',a') = reproduce params (b,a) in (a',b')
     _ -> (a,b)
 

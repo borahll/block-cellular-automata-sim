@@ -43,12 +43,12 @@ startAutomaton rules h w = do
   eG  <- grid h w (const newChan)
 
   chs <- grid h w $ \(x,y) -> do
-    inbox <- at inG (x,y)
+    inCh <- at inG (x,y)
     ni    <- at nG  (x,y)
     si    <- at sG  (x,y)
     wi    <- at wG  (x,y)
     ei    <- at eG  (x,y)
-    pure (CellCh inbox ni si wi ei)
+    pure (CellCh inCh ni si wi ei)
 
   acks <- newChan
 
@@ -141,7 +141,7 @@ cellThread rules h w (i,j) chOf myCh s0 pos0 acks = loop s0 pos0
               loop s' pos
             else do
 
-              Req sW <- readChan (wInbox myCh)
+              Req _ <- readChan (wInbox myCh)
               writeChan (eInbox (chOf (west h w (i,j)))) (Res s)
               Res sNew <- readChan (wInbox myCh)
               writeChan acks Ack
@@ -159,15 +159,15 @@ cellThread rules h w (i,j) chOf myCh s0 pos0 acks = loop s0 pos0
               writeChan acks Ack
               loop s' (margolusShift pos)
             else do
-              Req sN <- readChan (nInbox myCh)
+              Req _ <- readChan (nInbox myCh)
               writeChan (sInbox (chOf (north h w (i,j)))) (Res s)
               Res sNew <- readChan (nInbox myCh)
               writeChan acks Ack
               loop sNew (margolusShift pos)
 
 serverLoop :: AutoState s o -> Chan (AutomatonMsg o) -> IO ()
-serverLoop st inbox = forever $ do
-  msg <- receive inbox
+serverLoop st srvInbox = forever $ do
+  msg <- receive srvInbox
   case msg of
     MsgStep -> do
       let h = aH st; w = aW st

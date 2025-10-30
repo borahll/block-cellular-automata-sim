@@ -34,8 +34,8 @@ hexVal :: Char -> Int
 hexVal c | '0'<=c && c<='9' = fromEnum c - fromEnum '0'
          | 'a'<=lc && lc<='f' = 10 + fromEnum lc - fromEnum 'a'
          | otherwise = 0
-  where lc = toLower c
-        toLower x | 'A'<=x && x<='Z' = toEnum (fromEnum x + 32)
+  where lc = toLowerC c
+        toLowerC x | 'A'<=x && x<='Z' = toEnum (fromEnum x + 32)
                   | otherwise        = x
 
 twoHex :: Char -> Char -> Int
