@@ -15,6 +15,7 @@ import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (assertBool, assertFailure, testCase, (@?=))
 import Test.Tasty.QuickCheck (testProperty)
+import System.Random (mkStdGen)
 
 parserTest :: String -> Exp -> TestTree
 parserTest s e =
@@ -603,8 +604,206 @@ taskEtests =
 taskFtests :: TestTree
 taskFtests =
   testGroup
-    "Task F"
-    []
+    "Task F (initial / reproduce / groom / age / kill + E2E parity)"
+    [
+
+      -- F0. Initial strategy tiling reflected in colour pattern at step 0 (density=1).
+      testCase "Initial: (i+j) mod n tiling -> colour pattern at step 0" $ do
+        let h = 6; w = 8
+            cfg = defaultConfig
+                    { Galapagos.cfgHeight = h
+                    , Galapagos.cfgWidth  = w
+                    , Galapagos.cfgParams = (Galapagos.cfgParams defaultConfig)
+                        { Galapagos.invDensity = 1 } -- fully occupied
+                    }
+            rules = Galapagos.galapagos 0 cfg
+            obs0  = Simulation.observeGrid rules (Simulation.initialGrid rules h w)
+            cols  = map (\(_,c,_) -> c) (Galapagos.cfgStrategies cfg)
+            expected = [ [ cols !! ((i+j) `mod` length cols) | j <- [0..w-1] ]
+                       | i <- [0..h-1] ]
+        obs0 @?= expected
+
+    , testCase "Reproduce: empty neighbor + invReproductionChance=1 -> child with startHP & lifespan" $ do
+        let p   = (Galapagos.cfgParams defaultConfig)
+                    { Galapagos.startHP = 17
+                    , Galapagos.lifespan = 9
+                    , Galapagos.invReproductionChance = 1
+                    }
+            gPar   = mkStdGen 999
+            gEmpty = mkStdGen 111
+            left0  = cellWith samaritan gPar
+            right0 = emptyCell gEmpty
+            (left1, right1) = Galapagos.reproduce p (left0, right0)
+        case (getFinch right1) of
+          Nothing -> assertFailure "Expected child in right cell"
+          Just c  -> do
+            Galapagos.finchHP c         @?= Galapagos.startHP p
+            Galapagos.finchRoundsLeft c @?= Galapagos.lifespan p
+        -- parent remains
+        case getFinch left1 of
+          Nothing  -> assertFailure "Expected parent to remain in left cell"
+          Just p1  -> do
+            Galapagos.finchHP p1           @?= Galapagos.finchHP samaritan
+            Galapagos.finchRoundsLeft p1   @?= Galapagos.finchRoundsLeft samaritan
+            Galapagos.finchColour p1       @?= Galapagos.finchColour samaritan
+            Galapagos.finchStrategyExp p1  @?= Galapagos.finchStrategyExp samaritan
+
+    , testCase "Reproduce: both occupied -> no reproduction" $ do
+        let p = (Galapagos.cfgParams defaultConfig) { Galapagos.invReproductionChance = 1 }
+            g1 = mkStdGen 1; g2 = mkStdGen 2
+            l0 = cellWith samaritan g1
+            r0 = cellWith cheater   g2
+            (l1, r1) = Galapagos.reproduce p (l0, r0)
+        fmap Galapagos.finchID (getFinch l1) @?= Just (Galapagos.finchID samaritan)
+        fmap Galapagos.finchID (getFinch r1) @?= Just (Galapagos.finchID cheater)
+
+    , testCase "Groom: illegal finch is removed, legal meeting obeys maxHP cap" $ do
+        let baseP = Galapagos.cfgParams defaultConfig
+            gL = mkStdGen 7; gR = mkStdGen 8
+            -- illegal vs legal
+            (l1, r1) = Galapagos.groom baseP (cellWith invalid gL, cellWith samaritan gR)
+        case getFinch l1 of
+          Nothing -> pure ()
+          Just _  -> assertFailure "Expected left cell to be empty (illegal finch removed)"
+
+        case getFinch r1 of
+          Nothing -> assertFailure "Legal finch should remain when other is illegal"
+          Just _  -> pure ()
+        -- legal GG with cap
+        let p' = baseP { Galapagos.maxHP = 40, Galapagos.payoffs = (100, -2, 3, -4) }
+            a0 = samaritan { Galapagos.finchHP = 39 }
+            b0 = samaritan { Galapagos.finchHP = 39, Galapagos.finchID = 1 }
+            (_, r2) = Galapagos.groom p' (cellWith a0 gL, cellWith b0 gR)
+        case getFinch r2 of
+          Nothing -> assertFailure "Finch should remain after legal GG"
+          Just fr2 -> assertBool "HP must not exceed maxHP" (Galapagos.finchHP fr2 <= Galapagos.maxHP p')
+
+    , testCase "Age: finch roundsLeft decremented; empty stays empty" $ do
+        let gL = mkStdGen 10; gR = mkStdGen 11
+            f  = samaritan { Galapagos.finchRoundsLeft = 3 }
+            l1 = Galapagos.age (cellWith f gL)
+            r1 = Galapagos.age (emptyCell gR)
+        case getFinch l1 of
+          Just f1 -> Galapagos.finchRoundsLeft f1 @?= 2
+          _       -> assertFailure "Expected finch after age"
+        case getFinch r1 of
+          Nothing -> pure ()
+          Just _  -> assertFailure "Expected right cell to remain empty after age"
+
+
+
+    , testCase "Kill: removes when HP<=0 or roundsLeft<=0" $ do
+      let g = mkStdGen 12
+          k1l = Galapagos.kill (cellWith (samaritan { Galapagos.finchHP = 0 }) g)
+          k2l = Galapagos.kill (cellWith (samaritan { Galapagos.finchRoundsLeft = 0 }) g)
+      case getFinch k1l of
+        Nothing -> pure ()
+        Just _  -> assertFailure "Expected kill to remove finch when HP<=0"
+
+      case getFinch k2l of
+        Nothing -> pure ()
+        Just _  -> assertFailure "Expected kill to remove finch when roundsLeft<=0"
+
+
+
+    , testCase "Payoff mapping (1,-2,3,-4): GG, II, and I¬G deltas applied via groom" $ do
+        let p = Galapagos.cfgParams defaultConfig -- payoffs = (1,-2,3,-4)
+            g1 = mkStdGen 21; g2 = mkStdGen 22
+            -- GG: Samaritan vs Samaritan
+            a0 = samaritan { Galapagos.finchHP = 10, Galapagos.finchID = 100 }
+            b0 = samaritan { Galapagos.finchHP = 20, Galapagos.finchID = 101 }
+            (l1, r1) = Galapagos.groom p (cellWith a0 g1, cellWith b0 g2)
+        case (getFinch l1, getFinch r1) of
+          (Just a1, Just b1) -> do
+            (Galapagos.finchHP a1 - Galapagos.finchHP a0) @?= 1
+            (Galapagos.finchHP b1 - Galapagos.finchHP b0) @?= 1
+          _ -> assertFailure "Expected both finches after GG"
+        -- II: Cheater vs Cheater
+        let c0 = cheater { Galapagos.finchHP = 7, Galapagos.finchID = 200 }
+            d0 = cheater { Galapagos.finchHP = 6, Galapagos.finchID = 201 }
+            (l2, r2) = Galapagos.groom p (cellWith c0 g1, cellWith d0 g2)
+        case (getFinch l2, getFinch r2) of
+          (Just c1, Just d1) -> do
+            (Galapagos.finchHP c1 - Galapagos.finchHP c0) @?= (-2)
+            (Galapagos.finchHP d1 - Galapagos.finchHP d0) @?= (-2)
+          _ -> assertFailure "Expected both finches after II"
+        -- I¬G: cheater ignores, samaritan grooms
+        let e0 = cheater   { Galapagos.finchHP = 10, Galapagos.finchID = 300 }
+            f0 = samaritan { Galapagos.finchHP = 10, Galapagos.finchID = 301 }
+            (l3, r3) = Galapagos.groom p (cellWith e0 g1, cellWith f0 g2)
+        case (getFinch l3, getFinch r3) of
+          (Just e1, Just f1) -> do
+            (Galapagos.finchHP e1 - Galapagos.finchHP e0) @?= 3   -- c
+            (Galapagos.finchHP f1 - Galapagos.finchHP f0) @?= (-4) -- d
+          _ -> assertFailure "Expected both finches after I¬G"
+
+      -- End-to-end parity vs sequential (server must match simulator)
+    , testCase "Parity: dense (invDensity=1), steps={0,1,5,10}" $ do
+        let cfg = defaultConfig { Galapagos.cfgHeight = 4
+                                , Galapagos.cfgWidth  = 4
+                                , Galapagos.cfgParams = (Galapagos.cfgParams defaultConfig)
+                                    { Galapagos.invDensity = 1 }
+                                }
+        mapM_ (runBothAndCompare cfg) [0,1,5,10]
+
+    , testCase "Parity: sparse + always reproduce (invDensity=3, invReproductionChance=1), steps=6" $ do
+        let cfg = defaultConfig { Galapagos.cfgHeight = 10
+                                , Galapagos.cfgWidth  = 10
+                                , Galapagos.cfgParams = (Galapagos.cfgParams defaultConfig)
+                                    { Galapagos.invDensity = 3
+                                    , Galapagos.invReproductionChance = 1
+                                    }
+                                , Galapagos.cfgStrategies =
+                                    [ ( "samaritan"
+                                      , Galapagos.finchColour samaritan
+                                      , Galapagos.finchStrategyExp samaritan
+                                      )
+                                    , ( "cheater"
+                                      , Galapagos.finchColour cheater
+                                      , Galapagos.finchStrategyExp cheater
+                                      )
+                                    ]
+                                }
+        runBothAndCompare cfg 6
+
+    , testCase "Parity: never reproduce (invReproductionChance very large), steps=8" $ do
+        let cfg = defaultConfig { Galapagos.cfgHeight = 8
+                                , Galapagos.cfgWidth  = 6
+                                , Galapagos.cfgParams = (Galapagos.cfgParams defaultConfig)
+                                    { Galapagos.invDensity = 2
+                                    , Galapagos.invReproductionChance = 999999
+                                    }
+                                , Galapagos.cfgStrategies =
+                                    [ ( "samaritan"
+                                      , Galapagos.finchColour samaritan
+                                      , Galapagos.finchStrategyExp samaritan
+                                      )
+                                    , ( "cheater"
+                                      , Galapagos.finchColour cheater
+                                      , Galapagos.finchStrategyExp cheater
+                                      )
+                                    ]
+                                }
+        runBothAndCompare cfg 8
+    ]
+  where
+    -- Local tiny utilities (kept local to avoid adding global helpers)
+    getFinch cs = Galapagos.cellFinch cs
+    cellWith f g = Galapagos.CellState { Galapagos.cellFinch = Just f, Galapagos.cellRNG = g }
+    emptyCell g  = Galapagos.CellState { Galapagos.cellFinch = Nothing, Galapagos.cellRNG = g }
+
+    runBothAndCompare cfg steps = do
+      let h     = Galapagos.cfgHeight cfg
+          w     = Galapagos.cfgWidth  cfg
+          rules = Galapagos.galapagos 0 cfg
+          sim0  = Simulation.initialGrid rules h w
+          simN  = iterate (Simulation.stepGrid rules) sim0 !! steps
+          simObs = Simulation.observeGrid rules simN
+      srv <- startAutomaton rules h w
+      replicateM_ steps $ stepAutomaton srv
+      srvObs <- observeAutomaton srv
+      srvObs @?= simObs
+
 
 tests :: TestTree
 tests =

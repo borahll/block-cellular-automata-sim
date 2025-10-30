@@ -103,19 +103,63 @@ data CellState = CellState
     cellRNG :: StdGen
   }
 
+--True will mean groom, False will mean ignore
+rollDice :: Int -> StdGen -> (Bool, StdGen)
+rollDice sides gen =
+  let (result, newGen) = uniformR (1, sides) gen
+   in (result == 1, newGen)
+
+
+createFinch :: Params -> Int -> Colour -> Exp -> Finch
+createFinch params fid colour stratExp =
+  Finch
+    { finchID = fid,
+      finchHP = startHP params,
+      finchRoundsLeft = lifespan params,
+      finchColour = colour,
+      finchStrategy = createStrategy stratExp,
+      finchStrategyExp = stratExp
+    }
+
+createStrategy :: Exp -> Strategy
+createStrategy exp = fmap (const ()) (eval envEmpty exp)
+
 -- The first 'Int' is the 's' parameter for seeding the RNG.
 initial :: Int -> Config -> (Int, Int) -> CellState
 -- Given a seed, configuration, and cell coordinates, produces the initial state of the cell.
 -- Should be using randomness to determine if a finch is present based on the density parameter,
-
-initial = undefined
+initial seed cfg (i,j) =
+  let g0         = mkStdGen (seed + i*10000 + j)
+      ps         = cfgParams cfg
+      strats     = cfgStrategies cfg
+      n          = length strats
+  in case n of
+       0 -> CellState { cellFinch = Nothing, cellRNG = g0 }
+       _ -> let (ok,g1) = rollDice (invDensity ps) g0
+            in if not ok
+                 then CellState { cellFinch = Nothing, cellRNG = g1 }
+                 else let k        = (i + j) `mod` n
+                          (_,col,e) = strats !! k
+                          (fid,g2) = uniform g1
+                      in CellState { cellFinch = Just (createFinch ps fid col e)
+                                   , cellRNG   = g2 }
 
 reproduce :: Params -> (CellState, CellState) -> (CellState, CellState)
 -- """
 -- A finch should reproduce if it rolls a 1 on a dice with 
 -- sides equal to the inverse reproduction chance parameter.
 -- """
-reproduce = undefined
+reproduce params (a,b) =
+  case (cellFinch a, cellFinch b) of
+    (Just f, Nothing) ->
+      let (ok,g') = rollDice (invReproductionChance params) (cellRNG b)
+      in if not ok then (a, b { cellRNG = g' })
+         else let (fid,g'') = uniform g'
+                  child = createFinch params fid (finchColour f) (finchStrategyExp f)
+              in (a, b { cellRNG = g'', cellFinch = Just child })
+    (Nothing, Just f) ->
+      let (b',a') = reproduce params (b,a) in (a',b')
+    _ -> (a,b)
 
 meet :: Params -> (Finch, Finch) -> (Maybe Finch, Maybe Finch)
 -- """
@@ -152,20 +196,34 @@ groom :: Params -> (CellState, CellState) -> (CellState, CellState)
 -- Two finches in neighboring cells interact by grooming each other.
 -- This function should update their states based on the grooming interaction.
 -- """
-groom = undefined
+groom params (a, b)= 
+  case (cellFinch a, cellFinch b) of
+    (Just fa, Just fb) ->
+      case meet params (fa,fb) of
+        (Nothing,Nothing) -> (a{cellFinch=Nothing}, b{cellFinch=Nothing})
+        (Nothing, Just fb')-> (a{cellFinch=Nothing}, b{cellFinch=Just fb'})
+        (Just fa', Nothing)-> (a{cellFinch=Just fa'}, b{cellFinch=Nothing})
+        (Just fa', Just fb')->(a{cellFinch=Just fa'}, b{cellFinch=Just fb'})
+    _ -> (a,b) 
 
 -- """
 -- A finch ages by decrementing its rounds left.
 -- If the rounds left reaches zero, the finch dies.
 -- """
 age :: CellState -> CellState
-age = undefined
+age cell = 
+  case cellFinch cell of
+    Just finch -> cell { cellFinch = Just (finch { finchRoundsLeft = finchRoundsLeft finch - 1 }) }
+    Nothing    -> cell
 
 -- """
 -- A finch dies, removing it from the cell.
 -- """
 kill :: CellState -> CellState
-kill = undefined
+kill c = 
+  case cellFinch c of
+    Just f | finchHP f <= 0 || finchRoundsLeft f <= 0 -> c { cellFinch = Nothing }
+    _ -> c
 
 
 both :: (a -> b) -> (a, a) -> (b, b)
