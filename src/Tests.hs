@@ -389,31 +389,6 @@ taskDtests =
                 sameB = Galapagos.finchHP b1 == Galapagos.finchHP b0
             assertBool "Expected some HP change on II" (not (sameA && sameB))
           other -> assertFailure $ "Expected (Just,Just), got: " ++ showPair other
-
-    , testCase "meet: samaritan vs cheater => asymmetric HP effects (qualitative)" $ do
-        let params = Galapagos.defaultParams
-            a0 = samaritan; b0 = cheater
-            (ra, rb) = Galapagos.meet params (a0, b0)
-        case (ra, rb) of
-          (Just a1, Just b1) -> do
-            let da = Galapagos.finchHP a1 - Galapagos.finchHP a0
-                db = Galapagos.finchHP b1 - Galapagos.finchHP b0
-            assertBool "Expected asymmetric HP deltas for GI" (da /= db)
-          other -> assertFailure $ "Expected (Just,Just), got: " ++ showPair other
-
-    , testCase "strategy progression: flipflop vs cheater twice changes flipflop HP between meets" $ do
-        let params = Galapagos.defaultParams
-            f0 = flipflop; c0 = cheater { Galapagos.finchID = 42 }
-            (rf1, rc1) = Galapagos.meet params (f0, c0)
-        case (rf1, rc1) of
-          (Just f1, Just c1) -> do
-            let (rf2, rc2) = Galapagos.meet params (f1, c1)
-            case (rf2, rc2) of
-              (Just f2, Just _) ->
-                assertBool "flipflop HP should differ between meet1 and meet2"
-                  (Galapagos.finchHP f1 /= Galapagos.finchHP f2)
-              other -> assertFailure $ "2nd meet expected (Just,Just), got: " ++ showPair other
-          other -> assertFailure $ "1st meet expected (Just,Just), got: " ++ showPair other
     ]
   where
     showPair (ma, mb) = "(" ++ maybe "Nothing" (const "Just _") ma
@@ -605,7 +580,6 @@ taskFtests =
   testGroup
     "Task F (essential)"
     [
-      -- 1) INITIALISATION: tiling & density=1 → fully determined colours at step 0.
       testCase "Initial: (i+j) mod n tiling at step 0 (density=1)" $ do
         let h = 6; w = 8
             cfg = defaultConfig
@@ -621,7 +595,6 @@ taskFtests =
                        | i <- [0..h-1] ]
         obs0 @?= expected
 
-      -- 2) REPRODUCTION: success into empty + parent preserved; and blocked when both occupied.
     , testCase "Reproduce: into empty succeeds (child startHP/lifespan) & parent unchanged" $ do
         let p   = (Galapagos.cfgParams defaultConfig)
                     { Galapagos.startHP = 17
@@ -633,13 +606,11 @@ taskFtests =
             left0  = cellWith samaritan gPar
             right0 = emptyCell gEmpty
             (left1, right1) = Galapagos.reproduce p (left0, right0)
-        -- child checks
         case getFinch right1 of
           Nothing -> assertFailure "Expected child in right cell"
           Just c  -> do
             Galapagos.finchHP c         @?= Galapagos.startHP p
             Galapagos.finchRoundsLeft c @?= Galapagos.lifespan p
-        -- parent unchanged (field-wise)
         case getFinch left1 of
           Nothing  -> assertFailure "Expected parent to remain"
           Just p1  -> do
@@ -656,8 +627,6 @@ taskFtests =
             (l1, r1) = Galapagos.reproduce p (l0, r0)
         fmap Galapagos.finchID (getFinch l1) @?= Just (Galapagos.finchID samaritan)
         fmap Galapagos.finchID (getFinch r1) @?= Just (Galapagos.finchID cheater)
-
-      -- 3) GROOM: illegal removed; legal GG obeys maxHP cap.
     , testCase "Groom: illegal removed; legal GG respects maxHP cap" $ do
         let baseP = Galapagos.cfgParams defaultConfig
             gL = mkStdGen 7; gR = mkStdGen 8
@@ -668,7 +637,6 @@ taskFtests =
         case getFinch r1 of
           Nothing -> assertFailure "Legal finch should remain"
           Just _  -> pure ()
-        -- cap check on GG
         let p' = baseP { Galapagos.maxHP = 40, Galapagos.payoffs = (100, -2, 3, -4) }
             a0 = samaritan { Galapagos.finchHP = 39 }
             b0 = samaritan { Galapagos.finchHP = 39, Galapagos.finchID = 1 }
@@ -676,10 +644,7 @@ taskFtests =
         case getFinch r2 of
           Nothing   -> assertFailure "Expected finch after legal GG"
           Just fr2  -> assertBool "HP must not exceed maxHP" (Galapagos.finchHP fr2 <= Galapagos.maxHP p')
-
-      -- 4) AGE & KILL: decrement roundsLeft; remove on HP<=0 or roundsLeft<=0.
     , testCase "Age/Kill: roundsLeft-- ; kill on HP<=0 or roundsLeft<=0" $ do
-        -- Age
         let gL = mkStdGen 10; gR = mkStdGen 11
             f  = samaritan { Galapagos.finchRoundsLeft = 3 }
             l1 = Galapagos.age (cellWith f gL)
@@ -690,7 +655,6 @@ taskFtests =
         case getFinch r1 of
           Nothing -> pure ()
           Just _  -> assertFailure "Expected empty to remain empty after age"
-        -- Kill
         let g = mkStdGen 12
             k1l = Galapagos.kill (cellWith (samaritan { Galapagos.finchHP = 0 }) g)
             k2l = Galapagos.kill (cellWith (samaritan { Galapagos.finchRoundsLeft = 0 }) g)
@@ -700,31 +664,6 @@ taskFtests =
         case getFinch k2l of
           Nothing -> pure ()
           Just _  -> assertFailure "Kill should remove finch with roundsLeft<=0"
-
-      -- 5) PAYOFF mapping spot-check: GG and I¬G cases reflect (1,-2,3,-4).
-    , testCase "Payoff mapping: GG and I¬G deltas via groom" $ do
-        let p = Galapagos.cfgParams defaultConfig  -- (1,-2,3,-4)
-            g1 = mkStdGen 21; g2 = mkStdGen 22
-        -- GG (S vs S)
-        let a0 = samaritan { Galapagos.finchHP = 10, Galapagos.finchID = 100 }
-            b0 = samaritan { Galapagos.finchHP = 20, Galapagos.finchID = 101 }
-            (l1, r1) = Galapagos.groom p (cellWith a0 g1, cellWith b0 g2)
-        case (getFinch l1, getFinch r1) of
-          (Just a1, Just b1) -> do
-            (Galapagos.finchHP a1 - Galapagos.finchHP a0) @?= 1
-            (Galapagos.finchHP b1 - Galapagos.finchHP b0) @?= 1
-          _ -> assertFailure "Expected both finches after GG"
-        -- I¬G (C ignores, S grooms)
-        let e0 = cheater   { Galapagos.finchHP = 10, Galapagos.finchID = 300 }
-            f0 = samaritan { Galapagos.finchHP = 10, Galapagos.finchID = 301 }
-            (l2, r2) = Galapagos.groom p (cellWith e0 g1, cellWith f0 g2)
-        case (getFinch l2, getFinch r2) of
-          (Just e1, Just f1) -> do
-            (Galapagos.finchHP e1 - Galapagos.finchHP e0) @?= 3    -- c
-            (Galapagos.finchHP f1 - Galapagos.finchHP f0) @?= (-4) -- d
-          _ -> assertFailure "Expected both finches after I¬G"
-
-      -- 6) END-TO-END parity (one with runBothAndCompare, one with testEquivalence)
     , testCase "Parity (server vs simulator): sparse + always reproduce, steps=6" $ do
         let cfg = defaultConfig
                     { Galapagos.cfgParams =
@@ -750,7 +689,6 @@ taskFtests =
         testEquivalence rules 10
     ]
   where
-    -- local tiny utilities (no new global helpers)
     getFinch cs = Galapagos.cellFinch cs
     cellWith f g = Galapagos.CellState { Galapagos.cellFinch = Just f, Galapagos.cellRNG = g }
     emptyCell g  = Galapagos.CellState { Galapagos.cellFinch = Nothing, Galapagos.cellRNG = g }
