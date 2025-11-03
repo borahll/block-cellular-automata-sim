@@ -124,7 +124,7 @@ createFinch params fid colour stratExp =
 createStrategy :: Exp -> Strategy
 createStrategy exP = fmap (const ()) (eval envEmpty exP)
 
--- The first 'Int' is the 's' parameter for seeding the RNG.
+
 initial :: Int -> Config -> (Int, Int) -> CellState
 -- Given a seed, configuration, and cell coordinates, produces the initial state of the cell.
 -- Should be using randomness to determine if a finch is present based on the density parameter,
